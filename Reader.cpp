@@ -19,14 +19,18 @@
 int mpiRank, mpiSize;
 
 template <class T>
-void PrintData(std::vector<T> &data, size_t step)
+void PrintData(const std::vector<T> &data, const size_t rankStep, const size_t globalStep, const bool verbose)
 {
-    std::cout << "Rank: " << mpiRank << " Step: " << step << " [";
-    for (size_t i = 0; i < data.size(); ++i)
+    std::cout << "Rank = " << mpiRank << ",  Rank step = " << rankStep << ",  Global step = " << globalStep << std::endl;
+    if(verbose)
     {
-        std::cout << data[i] << " ";
+        std::cout << "[";
+        for (const auto i : data)
+        {
+            std::cout << i << " ";
+        }
+        std::cout << "]" << std::endl;
     }
-    std::cout << "]" << std::endl;
 }
 
 int main(int argc, char *argv[])
@@ -36,17 +40,16 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
     MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
 
+    int port = 12306 + mpiRank*2;
+
     // initialize adios2
     adios2::ADIOS adios(MPI_COMM_SELF, adios2::DebugON);
     adios2::IO dataManIO = adios.DeclareIO("whatever");
     dataManIO.SetEngine("DataMan");
-    dataManIO.SetParameters({{"IPAddress", "127.0.0.1"}, {"Port", "12306"}, {"Timeout", "5"}});
+    dataManIO.SetParameters({{"IPAddress", "127.0.0.1"}, {"Port", std::to_string(port)}, {"Timeout", "5"}});
 
     // open stream
     adios2::Engine dataManReader = dataManIO.Open("HelloDataMan", adios2::Mode::Read);
-
-    // define variable
-    adios2::Variable<float> floatArrayVar;
 
     // read data
     std::vector<float> floatVector;
@@ -55,13 +58,20 @@ int main(int argc, char *argv[])
         auto status = dataManReader.BeginStep();
         if (status == adios2::StepStatus::OK)
         {
-            floatArrayVar = dataManIO.InquireVariable<float>("FloatArray");
+            // get variable FloatArray
+            auto floatArrayVar = dataManIO.InquireVariable<float>("FloatArray");
             auto shape = floatArrayVar.Shape();
             size_t datasize = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
             floatVector.resize(datasize);
-            dataManReader.Get<float>(floatArrayVar, floatVector.data(), adios2::Mode::Sync);
+            dataManReader.Get<float>(floatArrayVar, floatVector.data());
+
+            // get variable GlobalStep
+            uint64_t globalStep;
+            auto stepVar = dataManIO.InquireVariable<uint64_t>("GlobalStep");
+            dataManReader.Get<uint64_t>(stepVar, globalStep);
+
             dataManReader.EndStep();
-            PrintData(floatVector, dataManReader.CurrentStep());
+            PrintData(floatVector, dataManReader.CurrentStep(), globalStep, false);
         }
         else if (status == adios2::StepStatus::EndOfStream)
         {

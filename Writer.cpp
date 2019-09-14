@@ -26,7 +26,6 @@ template <class T>
 void PrintData(const std::vector<T> &data, const size_t rankStep, const size_t globalStep, const bool verbose)
 {
     std::cout << "Rank = " << mpiRank << ",  Rank step = " << rankStep << ",  Global step = " << globalStep << std::endl;
-
     if(verbose)
     {
         std::cout << "[";
@@ -70,15 +69,15 @@ int main(int argc, char *argv[])
 
     // define variable
     auto floatArrayVar = dataManIO.DefineVariable<float>("FloatArray", shape, start, count);
-    auto StepVar = dataManIO.DefineVariable<uint64_t>("GlobalStep", {1}, {0}, {1});
+    auto stepVar = dataManIO.DefineVariable<uint64_t>("GlobalStep");
 
     // write data
-    for (size_t i = mpiRank; i < steps; i+=mpiSize)
+    for (uint64_t i = mpiRank; i < steps; i+=mpiSize)
     {
         dataManWriter.BeginStep();
         auto floatVector = GenerateData<float>(i);
         dataManWriter.Put(floatArrayVar, floatVector.data());
-        dataManWriter.Put(StepVar, i);
+        dataManWriter.Put(stepVar, i);
         PrintData(floatVector, dataManWriter.CurrentStep(), i, false);
         dataManWriter.EndStep();
     }
