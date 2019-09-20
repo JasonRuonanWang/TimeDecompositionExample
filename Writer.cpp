@@ -15,10 +15,12 @@
 #include <thread>
 #include <vector>
 
-size_t steps = 100000;
-adios2::Dims shape = {16, 32};
-adios2::Dims start = {0,0};
-adios2::Dims count = {16, 32};
+size_t steps = 1000;
+adios2::Dims shape = {1000000};
+adios2::Dims start = {0};
+adios2::Dims count = {1000000};
+
+bool generateDataForEveryStep = false;
 
 int mpiRank, mpiSize;
 
@@ -71,15 +73,35 @@ int main(int argc, char *argv[])
     auto floatArrayVar = dataManIO.DefineVariable<float>("FloatArray", shape, start, count);
     auto stepVar = dataManIO.DefineVariable<uint64_t>("GlobalStep");
 
+    size_t totalDataBytes = std::accumulate(shape.begin(), shape.end(), sizeof(float) * steps, std::multiplies<size_t>());
+
     // write data
+
+    auto floatVector = GenerateData<float>(0);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    auto startTime = std::chrono::system_clock::now();
     for (uint64_t i = mpiRank; i < steps; i+=mpiSize)
     {
         dataManWriter.BeginStep();
-        auto floatVector = GenerateData<float>(i);
+        if(generateDataForEveryStep)
+        {
+            floatVector = GenerateData<float>(i);
+        }
         dataManWriter.Put(floatArrayVar, floatVector.data());
         dataManWriter.Put(stepVar, i);
         PrintData(floatVector, dataManWriter.CurrentStep(), i, false);
         dataManWriter.EndStep();
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    auto endTime = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+
+    float dataRate = (double)totalDataBytes / (double)duration.count() / 1000000.0;
+
+    if(mpiRank == 0)
+    {
+        std::cout << "data rate = " << dataRate << " MB/s" << std::endl;
     }
 
     dataManWriter.Close();

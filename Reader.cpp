@@ -53,14 +53,20 @@ int main(int argc, char *argv[])
 
     // read data
     std::vector<float> floatVector;
+    MPI_Barrier(MPI_COMM_WORLD);
+    auto startTime = std::chrono::system_clock::now();
+    size_t steps = 0;
+    adios2::Dims shape;
     while (true)
     {
         auto status = dataManReader.BeginStep();
         if (status == adios2::StepStatus::OK)
         {
+            ++steps;
+
             // get variable FloatArray
             auto floatArrayVar = dataManIO.InquireVariable<float>("FloatArray");
-            auto shape = floatArrayVar.Shape();
+            shape = floatArrayVar.Shape();
             size_t datasize = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
             floatVector.resize(datasize);
             dataManReader.Get<float>(floatArrayVar, floatVector.data());
@@ -78,6 +84,19 @@ int main(int argc, char *argv[])
             std::cout << "End of stream" << std::endl;
             break;
         }
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    auto endTime = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+    size_t rankTotalDataBytes = std::accumulate(shape.begin(), shape.end(), sizeof(float) * steps, std::multiplies<size_t>());
+    size_t totalDataBytes;
+
+    MPI_Reduce(&rankTotalDataBytes, &totalDataBytes, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    float dataRate = (double)totalDataBytes / (double)duration.count() / 1000000.0;
+    if(mpiRank == 0)
+    {
+        std::cout << "data rate = " << dataRate << " MB/s" << std::endl;
     }
 
     // clean up
