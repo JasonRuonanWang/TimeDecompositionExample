@@ -87,13 +87,13 @@ int main(int argc, char *argv[])
     }
     MPI_Barrier(MPI_COMM_WORLD);
     auto endTime = std::chrono::system_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
     size_t rankTotalDataBytes = std::accumulate(shape.begin(), shape.end(), sizeof(float) * steps, std::multiplies<size_t>());
     size_t totalDataBytes;
 
     MPI_Reduce(&rankTotalDataBytes, &totalDataBytes, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
 
-    float dataRate = (double)totalDataBytes / (double)duration.count() / 1000000.0;
+    float dataRate = (double)totalDataBytes / (double)duration.count();
     if(mpiRank == 0)
     {
         std::cout << "data rate = " << dataRate << " MB/s" << std::endl;

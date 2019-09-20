@@ -95,9 +95,9 @@ int main(int argc, char *argv[])
     }
     MPI_Barrier(MPI_COMM_WORLD);
     auto endTime = std::chrono::system_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 
-    float dataRate = (double)totalDataBytes / (double)duration.count() / 1000000.0;
+    float dataRate = (double)totalDataBytes / (double)duration.count();
 
     if(mpiRank == 0)
     {
