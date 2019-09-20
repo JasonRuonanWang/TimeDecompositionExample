@@ -60,43 +60,43 @@ int main(int argc, char *argv[])
 
     int port = 12306 + mpiRank*2;
 
-    // initialize adios2
-    adios2::ADIOS adios(MPI_COMM_SELF, adios2::DebugON);
-    adios2::IO dataManIO = adios.DeclareIO("whatever");
-    dataManIO.SetEngine("DataMan");
-    dataManIO.SetParameters({{"IPAddress", "127.0.0.1"}, {"Port", std::to_string(port)}, {"Timeout", "5"}});
-
-    // open stream
-    adios2::Engine dataManWriter = dataManIO.Open("HelloDataMan", adios2::Mode::Write);
-
-    // define variable
-    auto floatArrayVar = dataManIO.DefineVariable<float>("FloatArray", shape, start, count);
-    auto stepVar = dataManIO.DefineVariable<uint64_t>("GlobalStep");
-
-    size_t totalDataBytes = std::accumulate(shape.begin(), shape.end(), sizeof(float) * steps, std::multiplies<size_t>());
-
-    // write data
-
-    auto floatVector = GenerateData<float>(0);
-
-    MPI_Barrier(MPI_COMM_WORLD);
     auto startTime = std::chrono::system_clock::now();
-    for (uint64_t i = mpiRank; i < steps; i+=mpiSize)
     {
-        dataManWriter.BeginStep();
-        if(generateDataForEveryStep)
+        // initialize adios2
+        adios2::ADIOS adios(MPI_COMM_SELF, adios2::DebugON);
+        adios2::IO dataManIO = adios.DeclareIO("whatever");
+        dataManIO.SetEngine("DataMan");
+        dataManIO.SetParameters({{"IPAddress", "127.0.0.1"}, {"Port", std::to_string(port)}, {"Timeout", "5"}});
+
+        // open stream
+        adios2::Engine dataManWriter = dataManIO.Open("HelloDataMan", adios2::Mode::Write);
+
+        // define variable
+        auto floatArrayVar = dataManIO.DefineVariable<float>("FloatArray", shape, start, count);
+        auto stepVar = dataManIO.DefineVariable<uint64_t>("GlobalStep");
+
+        // write data
+        auto floatVector = GenerateData<float>(0);
+        MPI_Barrier(MPI_COMM_WORLD);
+        startTime = std::chrono::system_clock::now();
+        for (uint64_t i = mpiRank; i < steps; i+=mpiSize)
         {
-            floatVector = GenerateData<float>(i);
+            dataManWriter.BeginStep();
+            if(generateDataForEveryStep)
+            {
+                floatVector = GenerateData<float>(i);
+            }
+            dataManWriter.Put(floatArrayVar, floatVector.data());
+            dataManWriter.Put(stepVar, i);
+            PrintData(floatVector, dataManWriter.CurrentStep(), i, false);
+            dataManWriter.EndStep();
         }
-        dataManWriter.Put(floatArrayVar, floatVector.data());
-        dataManWriter.Put(stepVar, i);
-        PrintData(floatVector, dataManWriter.CurrentStep(), i, false);
-        dataManWriter.EndStep();
+        dataManWriter.Close();
     }
     MPI_Barrier(MPI_COMM_WORLD);
     auto endTime = std::chrono::system_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
-
+    size_t totalDataBytes = std::accumulate(shape.begin(), shape.end(), sizeof(float) * steps, std::multiplies<size_t>());
     float dataRate = (double)totalDataBytes / (double)duration.count();
 
     if(mpiRank == 0)
@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
         std::cout << "data rate = " << dataRate << " MB/s" << std::endl;
     }
 
-    dataManWriter.Close();
+
     MPI_Finalize();
 
     return 0;
