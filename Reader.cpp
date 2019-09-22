@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
     int port = 12306 + mpiRank*2;
 
     // initialize adios2
-    adios2::ADIOS adios(MPI_COMM_SELF, adios2::DebugON);
+    adios2::ADIOS adios;
     adios2::IO dataManIO = adios.DeclareIO("whatever");
     dataManIO.SetEngine("DataMan");
     dataManIO.SetParameters({{"IPAddress", "127.0.0.1"}, {"Port", std::to_string(port)}, {"Timeout", "5"}});
