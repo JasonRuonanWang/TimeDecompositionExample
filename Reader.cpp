@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
     float dataRate = (double)totalDataBytes / (double)duration.count();
 
     std::cout << "Total steps: " << steps << std::endl;
-    std::cout << "Total data sent: " << totalDataBytes / 1000000.0 << " MBs" << std::endl;
+    std::cout << "Total data received: " << totalDataBytes / 1000000.0 << " MBs" << std::endl;
     std::cout << "Time: " << durationSeconds.count() << " seconds" << std::endl;
     std::cout << "Data rate: " << dataRate << " MB/s" << std::endl;
 
