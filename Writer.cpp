@@ -13,6 +13,7 @@
 #include <numeric>
 #include <thread>
 #include <vector>
+#include <mutex>
 
 int totalThreads = 1;
 std::string ipAddress = "127.0.0.1";
