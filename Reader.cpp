@@ -60,9 +60,12 @@ void Thread(const int threadId)
             ++ allSteps[threadId];
 
             auto floatArrayVar = dataManIO.InquireVariable<float>("FloatArray");
-            shape = floatArrayVar.Shape();
-            size_t datasize = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
-            floatVector.resize(datasize);
+            if(shape.empty())
+            {
+                shape = floatArrayVar.Shape();
+                size_t datasize = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
+                floatVector.resize(datasize);
+            }
             dataManReader.Get<float>(floatArrayVar, floatVector.data());
 
             uint64_t globalStep;
