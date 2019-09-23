@@ -11,17 +11,23 @@
 #include <adios2.h>
 #include <chrono>
 #include <iostream>
-#include <mpi.h>
 #include <numeric>
 #include <thread>
 #include <vector>
 
-int mpiRank, mpiSize;
+int totalThreads = 1;
+std::string ipAddress = "127.0.0.1";
+int port = 50001;
+std::vector<size_t> allSteps;
+adios2::Dims globalShape;
+
+std::mutex printLock;
 
 template <class T>
-void PrintData(const std::vector<T> &data, const size_t rankStep, const size_t globalStep, const bool verbose)
+void PrintData(const std::vector<T> &data, const size_t rankStep, const size_t globalStep, const int threadId, const bool verbose)
 {
-    std::cout << "Rank = " << mpiRank << ",  Rank step = " << rankStep << ",  Global step = " << globalStep << std::endl;
+    printLock.lock();
+    std::cout << "Thread " << threadId << ", Thread Step " << rankStep << ",  Global Step " << globalStep << std::endl;
     if(verbose)
     {
         std::cout << "[";
@@ -31,53 +37,39 @@ void PrintData(const std::vector<T> &data, const size_t rankStep, const size_t g
         }
         std::cout << "]" << std::endl;
     }
+    printLock.unlock();
 }
 
-int main(int argc, char *argv[])
+void Thread(const int threadId)
 {
-    // initialize MPI
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
-    MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
-
-    int port = 12306 + mpiRank*2;
-
-    // initialize adios2
     adios2::ADIOS adios;
     adios2::IO dataManIO = adios.DeclareIO("whatever");
     dataManIO.SetEngine("DataMan");
-    dataManIO.SetParameters({{"IPAddress", "127.0.0.1"}, {"Port", std::to_string(port)}, {"Timeout", "5"}});
+    dataManIO.SetParameters({{"IPAddress", ipAddress}, {"Port", std::to_string(port + threadId*2)}, {"Timeout", "5"}});
 
-    // open stream
     adios2::Engine dataManReader = dataManIO.Open("HelloDataMan", adios2::Mode::Read);
 
-    // read data
     std::vector<float> floatVector;
-    MPI_Barrier(MPI_COMM_WORLD);
-    auto startTime = std::chrono::system_clock::now();
-    size_t steps = 0;
     adios2::Dims shape;
     while (true)
     {
         auto status = dataManReader.BeginStep();
         if (status == adios2::StepStatus::OK)
         {
-            ++steps;
+            ++ allSteps[threadId];
 
-            // get variable FloatArray
             auto floatArrayVar = dataManIO.InquireVariable<float>("FloatArray");
             shape = floatArrayVar.Shape();
             size_t datasize = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<size_t>());
             floatVector.resize(datasize);
             dataManReader.Get<float>(floatArrayVar, floatVector.data());
 
-            // get variable GlobalStep
             uint64_t globalStep;
             auto stepVar = dataManIO.InquireVariable<uint64_t>("GlobalStep");
             dataManReader.Get<uint64_t>(stepVar, globalStep);
 
             dataManReader.EndStep();
-            PrintData(floatVector, dataManReader.CurrentStep(), globalStep, false);
+            PrintData(floatVector, dataManReader.CurrentStep(), globalStep, threadId, false);
         }
         else if (status == adios2::StepStatus::EndOfStream)
         {
@@ -85,23 +77,56 @@ int main(int argc, char *argv[])
             break;
         }
     }
-    MPI_Barrier(MPI_COMM_WORLD);
-    auto endTime = std::chrono::system_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
-    size_t rankTotalDataBytes = std::accumulate(shape.begin(), shape.end(), sizeof(float) * steps, std::multiplies<size_t>());
-    size_t totalDataBytes;
-
-    MPI_Reduce(&rankTotalDataBytes, &totalDataBytes, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
-
-    float dataRate = (double)totalDataBytes / (double)duration.count();
-    if(mpiRank == 0)
+    if(threadId == 0)
     {
-        std::cout << "data rate = " << dataRate << " MB/s" << std::endl;
+        globalShape = shape;
+    }
+    dataManReader.Close();
+}
+
+int main(int argc, char *argv[])
+{
+    if(argc > 1)
+    {
+        totalThreads = atoi(argv[1]);
+    }
+    if(argc > 2)
+    {
+        ipAddress = argv[2];
+    }
+    if(argc > 3)
+    {
+        port = atoi(argv[3]);
     }
 
-    // clean up
-    dataManReader.Close();
-    MPI_Finalize();
+    allSteps.resize(totalThreads);
+
+    auto startTime = std::chrono::system_clock::now();
+
+    std::vector<std::thread> allThreads;
+    for(int i=0; i<totalThreads; ++i)
+    {
+        allThreads.emplace_back(std::thread(Thread, i));
+    }
+    for(auto &t : allThreads)
+    {
+        if(t.joinable())
+        {
+            t.join();
+        }
+    }
+
+    auto endTime = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+    auto durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+    size_t steps = std::accumulate(allSteps.begin(), allSteps.end(), 1, std::plus<size_t>());
+    size_t totalDataBytes = std::accumulate(globalShape.begin(), globalShape.end(), sizeof(float) * steps, std::multiplies<size_t>());
+    float dataRate = (double)totalDataBytes / (double)duration.count();
+
+    std::cout << "Total steps: " << steps << std::endl;
+    std::cout << "Total data sent: " << totalDataBytes / 1000000.0 << " MBs" << std::endl;
+    std::cout << "Time: " << durationSeconds.count() << " seconds" << std::endl;
+    std::cout << "Data rate: " << dataRate << " MB/s" << std::endl;
 
     return 0;
 }
